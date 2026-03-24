@@ -1,0 +1,7 @@
+C:\Users\Vikram>C:\Users\Vikram\.local\bin\claude.exe  
+
+C:\Users\Vikram\.local\bin\claude.exe  --resume 21fced3e-36a8-4f84-80cb-206a3be18c29
+
+
+
+claude --resume 21fced3e-36a8-4f84-80cb-206a3be18c29
