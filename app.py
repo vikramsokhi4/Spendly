@@ -1,12 +1,13 @@
 import csv
 import io
+import os
 from datetime import date, timedelta
 from flask import Flask, render_template, request, redirect, url_for, session, flash, Response
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = 'dev-secret-key-change-before-deployment'
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-local-only')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///spendly.db'
 
 db = SQLAlchemy(app)

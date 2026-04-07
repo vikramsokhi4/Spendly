@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — Spendly{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<div class="dash-page">
+
+    <!-- Header -->
+    <div class="dash-header">
+        <div>
+            <h1 class="dash-title">Welcome back, {{ session.user_name }}.</h1>
+            <p class="dash-subtitle">Showing expenses for {{ selected.strftime('%B %Y') }}.</p>
+        </div>
+        <div class="dash-header-actions">
+            <a href="/expenses/export" class="btn-ghost">↓ Export CSV</a>
+            <button class="btn-primary" id="open-add-modal">+ Add Expense</button>
+        </div>
+    </div>
+
+    <!-- Month navigation -->
+    <div class="month-nav">
+        <a class="month-nav-btn"
+           href="{{ url_for('dashboard', month=prev_month, year=prev_year) }}"
+           aria-label="Previous month">‹</a>
+        <span class="month-nav-label">{{ selected.strftime('%B %Y') }}</span>
+        <a class="month-nav-btn {% if is_current %}month-nav-btn--disabled{% endif %}"
+           {% if not is_current %}href="{{ url_for('dashboard', month=next_month, year=next_year) }}"{% endif %}
+           aria-label="Next month">›</a>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row">
+        <div class="stat-tile">
+            <p class="stat-tile-label">Total Spent</p>
+            <p class="stat-tile-value">€{{ "%.2f"|format(total_this_month) }}</p>
+        </div>
+        <div class="stat-tile">
+            <p class="stat-tile-label">Transactions</p>
+            <p class="stat-tile-value">{{ transaction_count }}</p>
+        </div>
+        <div class="stat-tile">
+            <p class="stat-tile-label">Top Category</p>
+            <p class="stat-tile-value stat-tile-value--sm">{{ top_category }}</p>
+        </div>
+        <div class="stat-tile">
+            <p class="stat-tile-label">Daily Average</p>
+            <p class="stat-tile-value">€{{ "%.2f"|format(daily_average) }}</p>
+        </div>
+    </div>
+
+    <!-- Main grid -->
+    <div class="dash-grid">
+
+        <!-- Transactions table -->
+        <div class="dash-card">
+            <h2 class="dash-card-title">Transactions</h2>
+            {% if expenses %}
+            <table class="expense-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Category</th>
+                        <th class="col-right">Amount</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in expenses %}
+                    <tr>
+                        <td class="exp-date">{{ e.date.strftime('%d %b') }}</td>
+                        <td class="exp-desc">{{ e.description }}</td>
+                        <td><span class="category-tag">{{ e.category }}</span></td>
+                        <td class="exp-amount">€{{ "%.2f"|format(e.amount) }}</td>
+                        <td class="exp-actions">
+                            <button class="btn-edit"
+                                    data-id="{{ e.id }}"
+                                    data-amount="{{ e.amount }}"
+                                    data-category="{{ e.category }}"
+                                    data-date="{{ e.date }}"
+                                    data-description="{{ e.description }}"
+                                    aria-label="Edit">✎</button>
+                            <form method="POST" action="/expenses/{{ e.id }}/delete"
+                                  onsubmit="return confirm('Delete this expense?')">
+                                <button type="submit" class="btn-delete" aria-label="Delete">✕</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <p class="empty-icon">○</p>
+                <p>No expenses for {{ selected.strftime('%B %Y') }}.</p>
+                <p>Click <strong>+ Add Expense</strong> to log one.</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Right column -->
+        <div class="dash-right">
+            <div class="dash-card">
+                <h2 class="dash-card-title">Spending by Category</h2>
+                {% if sorted_categories %}
+                <div class="category-breakdown">
+                    {% for cat, total in sorted_categories %}
+                    <div class="cat-row">
+                        <div class="cat-row-header">
+                            <span class="cat-name">{{ cat }}</span>
+                            <span class="cat-amount">€{{ "%.2f"|format(total) }}</span>
+                        </div>
+                        <div class="cat-track">
+                            <div class="cat-bar"
+                                 style="width: {{ [((total / max_cat_amount) * 100)|int, 2]|max }}%">
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <p>No data for this month.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Add Expense Modal -->
+<div id="add-expense-modal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-box modal-form" role="dialog" aria-modal="true" aria-label="Add Expense">
+        <button class="modal-close modal-close--dark" id="close-add-modal" aria-label="Close">✕</button>
+        <h2 class="modal-title">Add Expense</h2>
+        <form method="POST" action="/expenses/add">
+            <div class="form-group">
+                <label for="add-amount">Amount (€)</label>
+                <input type="number" id="add-amount" name="amount" class="form-input"
+                       placeholder="0.00" step="0.01" min="0.01" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="add-category">Category</label>
+                <select id="add-category" name="category" class="form-input" required>
+                    <option value="" disabled selected>Select a category</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat }}">{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="add-date">Date</label>
+                <input type="date" id="add-date" name="date" class="form-input"
+                       value="{{ today }}" required>
+            </div>
+            <div class="form-group">
+                <label for="add-description">Description</label>
+                <input type="text" id="add-description" name="description" class="form-input"
+                       placeholder="e.g. Grocery run, Bus ticket" maxlength="200" required>
+            </div>
+            <button type="submit" class="btn-submit">Save Expense</button>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Expense Modal -->
+<div id="edit-expense-modal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-box modal-form" role="dialog" aria-modal="true" aria-label="Edit Expense">
+        <button class="modal-close modal-close--dark" id="close-edit-modal" aria-label="Close">✕</button>
+        <h2 class="modal-title">Edit Expense</h2>
+        <form id="edit-expense-form" method="POST" action="">
+            <div class="form-group">
+                <label for="edit-amount">Amount (€)</label>
+                <input type="number" id="edit-amount" name="amount" class="form-input"
+                       step="0.01" min="0.01" required>
+            </div>
+            <div class="form-group">
+                <label for="edit-category">Category</label>
+                <select id="edit-category" name="category" class="form-input" required>
+                    {% for cat in categories %}
+                    <option value="{{ cat }}">{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="edit-date">Date</label>
+                <input type="date" id="edit-date" name="date" class="form-input" required>
+            </div>
+            <div class="form-group">
+                <label for="edit-description">Description</label>
+                <input type="text" id="edit-description" name="description" class="form-input"
+                       maxlength="200" required>
+            </div>
+            <button type="submit" class="btn-submit">Update Expense</button>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+
+    // ── Add modal ──────────────────────────────────────────────────
+    var addModal    = document.getElementById('add-expense-modal');
+    var openAddBtn  = document.getElementById('open-add-modal');
+    var closeAddBtn = document.getElementById('close-add-modal');
+
+    function openAdd() {
+        addModal.setAttribute('aria-hidden', 'false');
+        addModal.classList.add('is-open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeAdd() {
+        addModal.setAttribute('aria-hidden', 'true');
+        addModal.classList.remove('is-open');
+        document.body.style.overflow = '';
+    }
+
+    openAddBtn.addEventListener('click', openAdd);
+    closeAddBtn.addEventListener('click', closeAdd);
+    addModal.addEventListener('click', function (e) { if (e.target === addModal) closeAdd(); });
+
+    // ── Edit modal ─────────────────────────────────────────────────
+    var editModal    = document.getElementById('edit-expense-modal');
+    var closeEditBtn = document.getElementById('close-edit-modal');
+    var editForm     = document.getElementById('edit-expense-form');
+
+    document.querySelectorAll('.btn-edit').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var id = this.dataset.id;
+            editForm.action = '/expenses/' + id + '/edit';
+            document.getElementById('edit-amount').value      = this.dataset.amount;
+            document.getElementById('edit-date').value        = this.dataset.date;
+            document.getElementById('edit-description').value = this.dataset.description;
+
+            var sel = document.getElementById('edit-category');
+            for (var i = 0; i < sel.options.length; i++) {
+                sel.options[i].selected = (sel.options[i].value === this.dataset.category);
+            }
+
+            editModal.setAttribute('aria-hidden', 'false');
+            editModal.classList.add('is-open');
+            document.body.style.overflow = 'hidden';
+        });
+    });
+
+    function closeEdit() {
+        editModal.setAttribute('aria-hidden', 'true');
+        editModal.classList.remove('is-open');
+        document.body.style.overflow = '';
+    }
+
+    closeEditBtn.addEventListener('click', closeEdit);
+    editModal.addEventListener('click', function (e) { if (e.target === editModal) closeEdit(); });
+
+    // ── Shared Escape key handler ──────────────────────────────────
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        if (addModal.classList.contains('is-open'))  closeAdd();
+        if (editModal.classList.contains('is-open')) closeEdit();
+    });
+
+}());
+</script>
+{% endblock %}
