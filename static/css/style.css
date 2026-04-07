@@ -508,6 +508,40 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* ------------------------------------------------------------------ */
+/* Flash messages                                                      */
+/* ------------------------------------------------------------------ */
+
+.flash {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.875rem 1.5rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.flash--success {
+    background: #d1fae5;
+    color: #065f46;
+    border-bottom: 1px solid #6ee7b7;
+}
+
+.flash-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.6;
+    font-size: 0.8rem;
+    padding: 0.1rem 0.3rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.flash-close:hover { opacity: 1; }
+
+/* ------------------------------------------------------------------ */
 /* Terms page                                                          */
 /* ------------------------------------------------------------------ */
 
