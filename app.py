@@ -50,6 +50,27 @@ with app.app_context():
 
 
 # ------------------------------------------------------------------ #
+# Helpers                                                             #
+# ------------------------------------------------------------------ #
+
+def prev_month(month, year):
+    if month == 1:
+        return 12, year - 1
+    return month - 1, year
+
+
+def next_month(month, year):
+    if month == 12:
+        return 1, year + 1
+    return month + 1, year
+
+
+def days_in_month(month, year):
+    nm, ny = next_month(month, year)
+    return (date(ny, nm, 1) - date(year, month, 1)).days
+
+
+# ------------------------------------------------------------------ #
 # Auth routes                                                         #
 # ------------------------------------------------------------------ #
 
@@ -128,41 +149,62 @@ def dashboard():
 
     user_id = session["user_id"]
     today   = date.today()
-    first_of_month = today.replace(day=1)
 
-    # All expenses newest first
-    all_expenses = (Expense.query
-                    .filter_by(user_id=user_id)
-                    .order_by(Expense.date.desc(), Expense.id.desc())
-                    .all())
+    # Resolve selected month from query params, default to current month
+    try:
+        month = int(request.args.get("month", today.month))
+        year  = int(request.args.get("year",  today.year))
+        # Clamp: no future months
+        if date(year, month, 1) > today.replace(day=1):
+            month, year = today.month, today.year
+        selected = date(year, month, 1)
+    except (ValueError, TypeError):
+        return redirect(url_for("dashboard"))
 
-    monthly = [e for e in all_expenses if e.date >= first_of_month]
+    first_of_month = date(year, month, 1)
+    nm, ny = next_month(month, year)
+    last_of_month  = date(ny, nm, 1) - timedelta(days=1)
 
-    total_this_month  = sum(e.amount for e in monthly)
-    transaction_count = len(monthly)
-    days_elapsed      = max(today.day, 1)
-    daily_average     = total_this_month / days_elapsed
+    # Expenses for the selected month
+    monthly_expenses = (Expense.query
+                        .filter_by(user_id=user_id)
+                        .filter(Expense.date >= first_of_month,
+                                Expense.date <= last_of_month)
+                        .order_by(Expense.date.desc(), Expense.id.desc())
+                        .all())
 
-    # Category totals for the month
+    total             = sum(e.amount for e in monthly_expenses)
+    transaction_count = len(monthly_expenses)
+
+    is_current = (year == today.year and month == today.month)
+    elapsed    = today.day if is_current else days_in_month(month, year)
+    daily_avg  = total / max(elapsed, 1)
+
     cat_totals = {}
-    for e in monthly:
+    for e in monthly_expenses:
         cat_totals[e.category] = cat_totals.get(e.category, 0) + e.amount
 
     top_category      = max(cat_totals, key=cat_totals.get) if cat_totals else "—"
     sorted_categories = sorted(cat_totals.items(), key=lambda x: x[1], reverse=True)
     max_cat_amount    = sorted_categories[0][1] if sorted_categories else 1
 
+    pm, py = prev_month(month, year)
+
     return render_template(
         "dashboard.html",
-        expenses=all_expenses[:30],
-        total_this_month=total_this_month,
+        expenses=monthly_expenses,
+        total_this_month=total,
         transaction_count=transaction_count,
         top_category=top_category,
-        daily_average=daily_average,
+        daily_average=daily_avg,
         sorted_categories=sorted_categories,
         max_cat_amount=max_cat_amount,
         categories=CATEGORIES,
         today=today,
+        selected=selected,
+        is_current=is_current,
+        prev_month=pm, prev_year=py,
+        next_month=nm, next_year=ny,
     )
 
 
@@ -190,7 +232,28 @@ def add_expense():
     db.session.add(expense)
     db.session.commit()
     flash("Expense added successfully.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard",
+                            month=exp_date.month, year=exp_date.year))
+
+
+@app.route("/expenses/<int:id>/edit", methods=["POST"])
+def edit_expense(id):
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    expense = db.get_or_404(Expense, id)
+    if expense.user_id != session["user_id"]:
+        return "Forbidden", 403
+
+    expense.amount      = float(request.form["amount"])
+    expense.category    = request.form["category"]
+    expense.date        = date.fromisoformat(request.form["date"])
+    expense.description = request.form["description"].strip()
+    db.session.commit()
+
+    flash("Expense updated.", "success")
+    return redirect(url_for("dashboard",
+                            month=expense.date.month, year=expense.date.year))
 
 
 @app.route("/expenses/<int:id>/delete", methods=["POST"])
@@ -202,9 +265,11 @@ def delete_expense(id):
     if expense.user_id != session["user_id"]:
         return "Forbidden", 403
 
+    exp_month, exp_year = expense.date.month, expense.date.year
     db.session.delete(expense)
     db.session.commit()
-    return redirect(url_for("dashboard"))
+    flash("Expense deleted.", "success")
+    return redirect(url_for("dashboard", month=exp_month, year=exp_year))
 
 
 @app.route("/expenses/export")
@@ -221,21 +286,25 @@ def export_expenses():
     writer = csv.writer(output)
     writer.writerow(["Date", "Description", "Category", "Amount (€)"])
     for e in expenses:
-        writer.writerow([e.date.strftime("%Y-%m-%d"), e.description, e.category, f"{e.amount:.2f}"])
+        writer.writerow([e.date.strftime("%Y-%m-%d"), e.description,
+                         e.category, f"{e.amount:.2f}"])
 
-    csv_content = output.getvalue()
     filename = f"spendly_expenses_{date.today()}.csv"
-
     return Response(
-        csv_content,
+        output.getvalue(),
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 
-@app.route("/expenses/<int:id>/edit")
-def edit_expense(id):
-    return "Edit expense — coming soon"
+@app.route("/terms")
+def terms():
+    return render_template("terms.html")
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
 
 
 if __name__ == "__main__":
